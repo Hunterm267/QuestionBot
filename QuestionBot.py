@@ -7,7 +7,7 @@ from threading import Timer
 from numpy import random as rnd
 
 description = '''Question of the day!'''
-bot = commands.Bot(command_prefix='t/', description=description)
+bot = commands.Bot(command_prefix='q/', description=description)
 
 print("Using Discord.py Version {0}".format(discord.__version__))
 
