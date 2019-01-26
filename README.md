@@ -8,8 +8,8 @@ q/setModRole *role* : Sets the "moderator role" to *role*. Any user with this ro
 
 q/setModReportChannel *chan* : Sets the channel that the bot should post mod reports to (I.E : Commands used, questions changed).
 
-q/setQuestionTime *timeInSeconds* : Sets the time period that the question should be updated at. This will immediately cause the question to rotate.
+q/setRotateTime *HH:MM* : Sets the time at which to post a new question. *HH:MM* is given in 24-hour time, I.E 13:45 for 1:45 PM.
 
-q/setQuestionChannel *chan* : Sets the channel to which the questions should be posted. The bot will purge this channel, post its question, and pin that message every *timeInSeconds* seconds.
+q/setQuestionChannel *chan* : Sets the channel to which the questions should be posted. The bot will purge this channel and post the next question every day after the time set in setRotateTime passes.
 
-q/startQuestions, q/stopQuestions : Self explanatory. Starts (or stops) the question rotation.
+q/startQuestions, q/stopQuestions : Self explanatory. Starts (or stops) the question rotation. If setRotateTime has not been called, defaults to 00:00 (Midnight)
