@@ -1,4 +1,5 @@
 import pickle
+import datetime as dt
 
 class BotConfig:
 	def __init__(self):
@@ -9,7 +10,10 @@ class BotConfig:
 		except:
 			print("Error: Unable to load config file. Creating new file.")
 			self.config = {}
-			self.config["QuestionTime"] = 10;
+			nowTimeFull = dt.datetime.now();
+			nowTime = dt.time(hour=nowTimeFull.hour,minute=nowTimeFull.minute)
+			self.config["LastCheckTime"] = nowTime;
+			self.config["DoQuestions"] = False;
 
 	def setProperty(self,prop,val):
 		self.config[prop] = val

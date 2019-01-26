@@ -5,6 +5,7 @@ import asyncio
 import BotConfig
 from threading import Timer
 from numpy import random as rnd
+import datetime as dt
 
 description = '''Question of the day!'''
 bot = commands.Bot(command_prefix='q/', description=description)
@@ -124,22 +125,37 @@ async def setQuestionChannel(ctx, chan : discord.Channel):
 	bc.setProperty("QuestionChannel", chan)
 	await bot.say("Questions will be posted to: {0}.".format(chan.name))
 
-# This updates the frequency at which new questions will be posted. Calling this will also trigger an immediate question rotation if rotation was already happening.
-@bot.command(pass_context=True)
+# Takes the time to post a question as a 24 hour string, I.E "13:00" for 1 PM, "16:30" for 4:30 PM, etc.
+# Note: The time periodic checker only has a resolution of 10 minutes, so the exact moment of execution is only precise to within that.
+@bot.command()
 @commands.check(isUserModerator_Check)
-async def setQuestionTime(ctx, timeInSeconds):
-	bc.setProperty("QuestionTime",int(timeInSeconds))
-	await bot.say("A new question will be posted every {0} seconds".format(timeInSeconds))
-	await postModReport("Question update frequency changed", "Current question will also be rotated if rotation is turned on", "New Interval: {0} seconds".format(int(timeInSeconds)))
-	if (bc.rotateTask is not None):
-		bc.rotateTask.cancel()
-		theTask = asyncio.ensure_future(doRotate());
-		bc.rotateTask = theTask;
+async def setRotateTime(hhmm):
+	try:
+		comps = hhmm.split(":")
+		theTime = dt.time(hour=int(comps[0]),minute=int(comps[1]))
+	except:
+		await bot.say("There was a problem interpreting your string as a time")
+		return;
+	bc.setProperty("RotateTime",theTime)
+	await bot.say("A new question will be posted every day at {0}".format(theTime))
+	await postModReport("Question Rotate Time Changed", "setRotateTime command called", "New Time: {0}".format(theTime))
 
-# This function is never called directly by a user/the bot. It's called as a result of calling startQuestions or setQuestionTime. This function then keeps calling itself until stopQuestions is called.
-# This needed to be done this way because discord.py wraps @bot.command() tagged functions in a special "Command" class, which asyncio.ensure_future doesn't know how to handle.
-# We get around this by calling a non-bot command (So a normal function) from inside a bot command. Since ensure_future is non-blocking, and the function being called is executed in another thread, we have no issue having that thread wait for a while.
-async def doRotate():
+async def checkSchedule():
+	nowTimeFull = dt.datetime.now();
+	nowTime = dt.time(hour=nowTimeFull.hour,minute=nowTimeFull.minute,second=nowTimeFull.second)
+	lastCheck = bc.getProperty("LastCheckTime")
+	rotateTime = bc.getProperty("RotateTime");
+	doQuestions = bc.getProperty("DoQuestions")
+	if (rotateTime is not None and doQuestions is True):
+		# The last check is a catch for if the rotate time is somewhere near midnight by evaluating to true if we last ran the scheduler "After" the current time (I.E 23:55 -> 00:05)
+		if (nowTime >= rotateTime and (lastCheck < rotateTime or lastCheck >= nowTime)):
+			await doRotateQuestion()
+	# Now schedule the next check
+	bc.setProperty("LastCheckTime",nowTime);
+	await asyncio.sleep(600) # Wait 10 minutes for the next check
+	theTask = asyncio.ensure_future(checkSchedule())
+
+async def doRotateQuestion():
 	qchan = bc.getProperty("QuestionChannel")
 	if (qchan is not None):
 		await bot.purge_from(qchan,limit=10000)
@@ -151,10 +167,8 @@ async def doRotate():
 				num = num-1;
 		bc.setProperty("LastNum",num)
 		await bot.send_message(qchan,questions[num])
-		await postModReport("Question Rotated (Next ID: {0})".format(num), "Question time limit reached ({0} seconds)".format(bc.getProperty("QuestionTime")),questions[num])
-		await asyncio.sleep(bc.getProperty("QuestionTime"))
-		theTask = asyncio.ensure_future(doRotate())
-		bc.rotateTask = theTask;
+		await postModReport("Question Rotated (Next ID: {0})".format(num), "Rotation Time reached ({0})".format(bc.getProperty("RotateTime")),questions[num])
+
 
 # These next two just start and stop the question rotations. Starting starts the "doRotate()" function which continually calls itself in a non-blocking manner (I.E The previous invocation exits as soon as the next one is called, so we don't get an infinite pile of blocked functions)
 # The questions are started by calling doRotate() on another thread, which in turn keeps calling itself indefinitely. The prefs class keeps a handle on the current running/waiting task so it can be killed if needed.
@@ -162,16 +176,27 @@ async def doRotate():
 @bot.command()
 @commands.check(isUserModerator_Check)
 async def startQuestions():
+	rtime = bc.getProperty("RotateTime")
+	if (rtime is None):
+		await bot.say("WARNING: A rotation time has not been set. Defaulting to 00:00 (Midnight)")
+		midnight = dt.time() # Defaults to 00:00
+		await setRotateTime("00:00")
+	qchan = bc.getProperty("QuestionChannel");
+	if (qchan is None):
+		await bot.say("WARNING: A question channel has not been set. Questions may not be posted.")
+	bc.setProperty("DoQuestions",True);
 	await postModReport("Question Rotation Starting", "Question rotation start command used.", "Questions started")
-	theTask = asyncio.ensure_future(doRotate());
-	bc.rotateTask = theTask;
 
 @bot.command()
 @commands.check(isUserModerator_Check)
 async def stopQuestions():
+	bc.setProperty("DoQuestions",False)
 	await postModReport("Question Rotation Stopping", "Question rotation stop command used", "Questions stopped.")
-	bc.rotateTask.cancel();
 
 # Everything's good. Let's go!
+print("Starting task scheduler...")
+asyncio.ensure_future(checkSchedule())
+print("Done.")
+
 print("Startup complete. Launching bot...")
 bot.run(tok)
